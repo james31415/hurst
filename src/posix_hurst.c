@@ -11,10 +11,15 @@
 
 #include <time.h>
 
+#include <math.h>
+
+typedef float r32;
+typedef double r64;
+
 struct quote_list
 {
   struct tm Date;
-  double Close;
+  r64 Close;
 
   struct quote_list* Next;
 };
@@ -72,7 +77,7 @@ FIELD_CALLBACK(PrintField)
 
       LocalUserData->Working->Date = tm;
     } else if (pos->Column == 5) { // Close
-      double Close = atof(Field);
+      r64 Close = atof(Field);
       LocalUserData->Working->Close = Close;
 
       LocalUserData->QuoteList = add_quote(LocalUserData->QuoteList, LocalUserData->Working);
@@ -119,6 +124,139 @@ ReadEntireFile(const char* FileName) {
   return Result;
 }
 
+u32
+LargestPowerOfTwo(u32 Number)
+{
+  if (Number < 1)
+  {
+    return 0;
+  }
+
+  u32 Result = 1;
+  for (u32 i = 0; i < sizeof(u32); ++i)
+  {
+    u32 Current = 1 << i;
+
+    if (Current > Number)
+      break;
+
+    Result = Current;
+  }
+
+  return Result;
+}
+
+r64 Log(r64 Number)
+{
+  return log(Number);
+}
+
+u32
+ComputeLogReturns(r64* Data, u32 NumberOfDataPoints, r64** LogReturns)
+{
+  u32 NumberOfLogReturns = NumberOfDataPoints - 1;
+  *LogReturns = malloc(NumberOfLogReturns * sizeof(r64));
+  r64* LogReturn = *LogReturns;
+  for (u32 DataIndex = 0; DataIndex < NumberOfLogReturns; ++DataIndex)
+  {
+    *LogReturn = Log(Data[DataIndex + 1] / Data[DataIndex]);
+    ++LogReturn;
+  }
+
+  return NumberOfLogReturns;
+}
+
+struct linear_params
+{
+  r64 Slope;
+  r64 Intercept;
+};
+
+void
+LinearRegress(r64* X, r64* Y, u32 N, struct linear_params* Params)
+{
+  r64 sum_xy = 0.0;
+  r64 sum_x = 0.0;
+  r64 sum_x2 = 0.0;
+  r64 sum_y = 0.0;
+
+  for (u32 Index = 0; Index < N; ++Index)
+  {
+    sum_xy += X[Index] * Y[Index];
+    sum_x += X[Index];
+    sum_x2 += X[Index] * X[Index];
+    sum_y += Y[Index];
+  }
+
+  Params->Slope = (sum_xy - sum_y * sum_x / N) / (sum_x2 - sum_x * sum_x / N);
+  Params->Intercept = sum_y / N - Params->Slope * sum_x / N;
+}
+
+u32
+RemoveAR1(r64* LogReturns, u32 NumberOfLogReturns, r64** RescaledData)
+{
+  u32 NumberOfRescaledData = NumberOfLogReturns - 1;
+
+  struct linear_params Params;
+  LinearRegress(LogReturns, LogReturns + 1, NumberOfRescaledData, &Params);
+  r64 c = Params.Intercept;
+  r64 m = Params.Slope;
+
+  *RescaledData = malloc(NumberOfRescaledData * sizeof(r64));
+  r64* RescaledDatum = *RescaledData;
+  for (u32 DataIndex = 0; DataIndex < NumberOfRescaledData; ++DataIndex)
+  {
+    *RescaledDatum = LogReturns[DataIndex + 1] - (c + m * LogReturns[DataIndex]);
+    ++RescaledDatum;
+  }
+
+  return NumberOfRescaledData;
+}
+
+r64
+ComputeHurstExponent(r64* Data, u32 NumberOfDataPoints)
+{
+  r64* LogReturns;
+  u32 NumberOfLogReturns = ComputeLogReturns(Data, NumberOfDataPoints, &LogReturns);
+
+  r64* RescaledData;
+  /* u32 NumberOfRescaledData = */ RemoveAR1(LogReturns, NumberOfLogReturns, &RescaledData);
+
+  r64 HurstExponent = 0.0;
+  return HurstExponent;
+}
+
+u32
+PrepareData(struct quote_list* Head, r64** Data)
+{
+  u32 DataSize = 0;
+  struct quote_list* Node = Head;
+  while (Node) {
+    ++DataSize;
+
+    Node = Node->Next;
+  }
+
+  *Data = malloc(DataSize * sizeof(r64));
+  if (*Data == NULL) {
+    printf("PrepareData: Failed to alloc\n");
+    exit(1);
+  }
+
+  r64* Datum = *Data;
+
+  Node = Head;
+  while (Node)
+  {
+    *Datum = Node->Close;
+
+    ++Datum;
+    Node = Node->Next;
+  }
+
+  return DataSize;
+}
+
 #ifdef MAIN
 int main(int argc, char* argv[])
 {
@@ -152,14 +290,11 @@ int main(int argc, char* argv[])
 
   free(Reader.Buffer);
 
-  struct quote_list* node = &QuoteList;
-  while (node) {
-    char Buffer[256];
-    strftime(Buffer, 256, "%d - %m - %Y", &node->Date);
-    printf("%s: %g\n", Buffer, node->Close);
+  r64* Quotes = 0;
+  u32 QuoteSize = PrepareData(&QuoteList, &Quotes);
 
-    node = node->Next;
-  }
+  r64 HurstExponent = ComputeHurstExponent(Quotes, QuoteSize);
+  printf("Hurst exponent: %g\n", HurstExponent);
 
   return 0;
 }
