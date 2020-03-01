@@ -133,7 +133,7 @@ LargestPowerOfTwo(u32 Number)
 	}
 
 	u32 Result = 1;
-	for (u32 i = 0; i < sizeof(u32); ++i)
+	for (u32 i = 0; i < 8 * sizeof(u32); ++i)
 	{
 		u32 Current = 1 << i;
 
@@ -206,7 +206,7 @@ RemoveAR1(r64* LogReturns, u32 NumberOfLogReturns, r64** RescaledData)
 	LinearRegress(LogReturns, LogReturns + 1, NumberOfRescaledData, &Params);
 	r64 c = Params.Intercept;
 	r64 m = Params.Slope;
-
+	printf("AR: %g\t%g\n", c, m);
 	*RescaledData = malloc(NumberOfRescaledData * sizeof(r64));
 	r64* RescaledDatum = *RescaledData;
 	for (u32 DataIndex = 0; DataIndex < NumberOfRescaledData; ++DataIndex)
@@ -283,20 +283,18 @@ ComputeHurstExponent(r64* Data, u32 NumberOfDataPoints)
 	u32 NumberOfRescaledData = RemoveAR1(LogReturns, NumberOfLogReturns, &RescaledData);
 
 	u32 N = 0;
-	for (u32 BlockLength = MIN_LENGTH; BlockLength <= NumberOfRescaledData / 2; BlockLength *= 2)
+	u32 MaxBlockLength = 1024; // LargestPowerOfTwo(NumberOfRescaledData);
+	for (u32 BlockLength = MIN_LENGTH; BlockLength <= MaxBlockLength; BlockLength *= 2)
 	{
 		++N;
 	}
 
 	r64* LogN = malloc(N * sizeof(r64));
-	for (u32 Size = MIN_LENGTH, Index = 0; Size <= NumberOfRescaledData / 2; Size *= 2, ++Index)
-	{
-		LogN[Index] = Log(Size);
-	}
-
 	r64* LogRS = malloc(N * sizeof(r64));
-	for (u32 BlockLength = MIN_LENGTH, Index = 0; BlockLength <= NumberOfRescaledData / 2; BlockLength *= 2, ++Index)
+	for (u32 BlockLength = MIN_LENGTH, Index = 0; BlockLength <= MaxBlockLength; BlockLength *= 2, ++Index)
 	{
+		LogN[Index] = Log(BlockLength);
+
 		u32 NumBlocks = NumberOfRescaledData / BlockLength;
 		
 		r64 RS = 0;
@@ -325,7 +323,7 @@ ComputeHurstExponent(r64* Data, u32 NumberOfDataPoints)
 
 	for (u32 Index = 0; Index < N; ++Index)
 	{
-		printf("%g\t%g\n", LogN[Index], LogRS[Index]);
+		printf("%g\t%g\n", exp(LogN[Index]), LogRS[Index]);
 	}
 	printf("\n");
 
