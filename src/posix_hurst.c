@@ -272,6 +272,7 @@ StandardDeviation(r64* Data, u32 NumberOfDataPoints)
 	return Result;
 }
 
+#define MIN_LENGTH 8
 r64
 ComputeHurstExponent(r64* Data, u32 NumberOfDataPoints)
 {
@@ -281,14 +282,20 @@ ComputeHurstExponent(r64* Data, u32 NumberOfDataPoints)
 	r64* RescaledData;
 	u32 NumberOfRescaledData = RemoveAR1(LogReturns, NumberOfLogReturns, &RescaledData);
 
-	r64* LogN = malloc((NumberOfRescaledData / 2 - 4 + 1) * sizeof(r64));
-	for (u32 Index = 0; Index < NumberOfRescaledData / 2 - 4 + 1; ++Index)
+	u32 N = 0;
+	for (u32 BlockLength = MIN_LENGTH; BlockLength <= NumberOfRescaledData / 2; BlockLength *= 2)
 	{
-		LogN[Index] = Log(Index + 4);
+		++N;
 	}
 
-	r64* LogRS = malloc((NumberOfRescaledData / 2 - 4 + 1) * sizeof(r64));
-	for (u32 BlockLength = 4; BlockLength <= NumberOfRescaledData / 2; ++BlockLength)
+	r64* LogN = malloc(N * sizeof(r64));
+	for (u32 Size = MIN_LENGTH, Index = 0; Size <= NumberOfRescaledData / 2; Size *= 2, ++Index)
+	{
+		LogN[Index] = Log(Size);
+	}
+
+	r64* LogRS = malloc(N * sizeof(r64));
+	for (u32 BlockLength = MIN_LENGTH, Index = 0; BlockLength <= NumberOfRescaledData / 2; BlockLength *= 2, ++Index)
 	{
 		u32 NumBlocks = NumberOfRescaledData / BlockLength;
 		
@@ -305,7 +312,7 @@ ComputeHurstExponent(r64* Data, u32 NumberOfDataPoints)
 				ShiftedData[Index] = Sum(RescaledData, Index) - (Index + 1) * BlockMean;
 			}
 
-			r64 R = Range(Block, BlockLength);
+			r64 R = Range(ShiftedData, BlockLength);
 			r64 S = StandardDeviation(Block, BlockLength);
 			RS += R / S;
 
@@ -313,12 +320,17 @@ ComputeHurstExponent(r64* Data, u32 NumberOfDataPoints)
 		}
 
 		RS /= NumBlocks;
-
-		LogRS[BlockLength - 4] = Log(RS);
+		LogRS[Index] = Log(RS);
 	}
 
+	for (u32 Index = 0; Index < N; ++Index)
+	{
+		printf("%g\t%g\n", LogN[Index], LogRS[Index]);
+	}
+	printf("\n");
+
 	struct linear_params Params;
-	LinearRegress(LogN, LogRS, NumberOfRescaledData / 2 - 4 + 1, &Params);
+	LinearRegress(LogN, LogRS, N, &Params);
 	r64 HurstExponent = Params.Slope;
 	return HurstExponent;
 }
